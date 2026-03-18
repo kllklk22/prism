@@ -1,0 +1,25 @@
+# julia artifacts
+Manifest.toml
+*.jl.cov
+*.jl.mem
+.julia/
+
+# os noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# editor
+.vscode/
+.idea/
+*.swp
+
+# data files — don't commit someone's research dataset
+*.csv
+*.tsv
+*.hdf5
+*.h5
+*.nc
+
+# logs
+*.log
