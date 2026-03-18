@@ -4,7 +4,7 @@
 
 a full-stack data analysis tool built for scientists and researchers who are tired of waiting on python to loop through columns one at a time. prism dispatches every analysis task — distributions, correlations, outliers, pca, missing value profiling — to a separate julia worker process. they all run at the same time. results stream back to a live dashboard as each worker finishes.
 
-written by dande.
+written by me.
 
 ---
 
@@ -139,4 +139,4 @@ that's the whole pattern. everything else is plumbing.
 
 ---
 
-*written entirely by dande. yes it runs. no he won't debug your environment.*
+*written entirely by dande. yes it runs. no i won't debug your environment.*
