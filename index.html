@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>prism — parallel eda engine</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #080a0f;
+    --surface:   #0f1219;
+    --surface2:  #161b26;
+    --border:    #1e2535;
+    --accent:    #7c3aed;
+    --accent2:   #a855f7;
+    --green:     #10b981;
+    --red:       #ef4444;
+    --yellow:    #f59e0b;
+    --blue:      #3b82f6;
+    --cyan:      #06b6d4;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --font:      'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── header ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent), var(--cyan));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+
+  .logo-text { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; color: var(--text); }
+  .logo-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .worker-badge {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+  }
+
+  /* ── upload zone ── */
+  .upload-zone {
+    max-width: 640px;
+    margin: 48px auto;
+    padding: 0 24px;
+  }
+
+  .drop-area {
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    padding: 48px 32px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+  }
+
+  .drop-area:hover, .drop-area.drag-over {
+    border-color: var(--accent);
+    background: rgba(124, 58, 237, 0.06);
+  }
+
+  .drop-icon { font-size: 40px; margin-bottom: 16px; }
+  .drop-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  .drop-sub { color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+  .upload-btn {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 10px 28px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font);
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .upload-btn:hover { opacity: 0.85; }
+
+  #file-input { display: none; }
+
+  /* ── status bar ── */
+  .status-bar {
+    max-width: 1200px;
+    margin: 0 auto 24px;
+    padding: 0 24px;
+    display: none;
+  }
+
+  .status-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .status-indicator {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .status-running  { background: var(--yellow); animation: pulse 1s infinite; }
+  .status-complete { background: var(--green); }
+  .status-failed   { background: var(--red); }
+
+  .status-text { flex: 1; }
+  .status-title { font-weight: 600; margin-bottom: 4px; }
+  .status-sub   { color: var(--muted); font-size: 11px; }
+
+  .progress-bar {
+    flex: 0 0 200px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--cyan));
+    border-radius: 2px;
+    transition: width 0.3s;
+    width: 0%;
+  }
+
+  /* ── dashboard grid ── */
+  .dashboard {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px 48px;
+    display: none;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 32px 0 12px;
+  }
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .stat-label { color: var(--muted); font-size: 11px; margin-bottom: 6px; }
+  .stat-value { font-size: 22px; font-weight: 700; color: var(--text); }
+  .stat-sub   { color: var(--muted); font-size: 11px; margin-top: 4px; }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .panel-title { font-size: 13px; font-weight: 600; }
+  .panel-badge {
+    font-size: 10px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: rgba(124,58,237,0.15);
+    color: var(--accent2);
+    border: 1px solid rgba(124,58,237,0.25);
+  }
+
+  /* ── summary table ── */
+  .summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .summary-table th {
+    text-align: left;
+    padding: 8px 12px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .summary-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(30,37,53,0.5);
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .summary-table tr:hover td { background: var(--surface2); }
+  .col-name { color: var(--accent2); }
+
+  /* ── charts grid ── */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+
+  .chart-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+
+  .chart-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent2);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .chart-wrap { position: relative; height: 180px; }
+
+  /* ── heatmap ── */
+  .heatmap-wrap { overflow-x: auto; }
+
+  .heatmap-grid {
+    display: inline-grid;
+    gap: 2px;
+    margin-top: 8px;
+  }
+
+  .heat-cell {
+    width: 48px; height: 48px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: default;
+    transition: transform 0.1s;
+  }
+
+  .heat-cell:hover { transform: scale(1.08); z-index: 1; }
+
+  .heat-labels-row {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 2px;
+    padding-left: 52px;
+  }
+
+  .heat-label {
+    width: 48px;
+    font-size: 9px;
+    color: var(--muted);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .heat-row { display: flex; gap: 2px; align-items: center; }
+  .heat-row-label {
+    width: 50px;
+    font-size: 9px;
+    color: var(--muted);
+    text-align: right;
+    padding-right: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── pca scatter ── */
+  .pca-wrap { position: relative; height: 320px; }
+
+  /* ── outliers ── */
+  .outlier-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+
+  .outlier-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+  }
+
+  .outlier-col-name { color: var(--accent2); font-size: 11px; font-weight: 600; margin-bottom: 10px; }
+
+  .outlier-row {
+    display: flex; justify-content: space-between;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(30,37,53,0.5);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .outlier-row span:last-child { color: var(--text); }
+  .outlier-flag { color: var(--red); font-weight: 600; }
+
+  /* ── missing value bars ── */
+  .missing-rows { display: flex; flex-direction: column; gap: 8px; }
+
+  .missing-row {
+    display: flex; align-items: center; gap: 12px;
+  }
+
+  .missing-col-name {
+    width: 140px; flex-shrink: 0;
+    font-size: 11px; color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    text-align: right;
+  }
+
+  .missing-bar-bg {
+    flex: 1;
+    height: 18px;
+    background: var(--surface2);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .missing-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--red), var(--yellow));
+    border-radius: 3px;
+    min-width: 2px;
+    transition: width 0.4s;
+  }
+
+  .missing-pct {
+    width: 48px; flex-shrink: 0;
+    font-size: 11px; color: var(--muted);
+    text-align: right;
+  }
+
+  /* ── loading state ── */
+  .loading-placeholder {
+    display: flex; align-items: center; justify-content: center;
+    height: 100px; color: var(--muted);
+    font-size: 12px; gap: 10px;
+  }
+
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 64px 24px;
+    color: var(--muted);
+  }
+
+  .empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+  .empty-state-text { font-size: 15px; }
+</style>
+</head>
+<body>
+
+<!-- header -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">◈</div>
+    <div>
+      <div class="logo-text">prism</div>
+      <div class="logo-sub">parallel exploratory data analysis</div>
+    </div>
+  </div>
+  <div class="worker-badge">
+    <div class="dot"></div>
+    <span id="worker-count">loading workers...</span>
+  </div>
+</header>
+
+<!-- upload zone -->
+<div class="upload-zone" id="upload-zone">
+  <div class="drop-area" id="drop-area">
+    <div class="drop-icon">⬡</div>
+    <div class="drop-title">drop your dataset here</div>
+    <div class="drop-sub">
+      csv files up to any size.<br>
+      julia will spawn one worker per cpu core.<br>
+      all analyses run simultaneously.
+    </div>
+    <button class="upload-btn" onclick="document.getElementById('file-input').click()">
+      select csv file
+    </button>
+    <input type="file" id="file-input" accept=".csv">
+  </div>
+</div>
+
+<!-- status bar -->
+<div class="status-bar" id="status-bar">
+  <div class="status-card">
+    <div class="status-indicator" id="status-dot"></div>
+    <div class="status-text">
+      <div class="status-title" id="status-title">analyzing...</div>
+      <div class="status-sub"  id="status-sub">dispatching to workers</div>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+  </div>
+</div>
+
+<!-- dashboard -->
+<div class="dashboard" id="dashboard">
+
+  <!-- overview cards -->
+  <div class="section-title">overview</div>
+  <div class="cards-grid" id="overview-cards"></div>
+
+  <!-- summary statistics -->
+  <div class="section-title">summary statistics</div>
+  <div class="panel" id="summary-panel">
+    <div class="loading-placeholder"><div class="spinner"></div> waiting for workers...</div>
+  </div>
+
+  <!-- histograms -->
+  <div class="section-title">distributions</div>
+  <div class="panel" id="hist-panel">
+    <div class="loading-placeholder"><div class="spinner"></div> waiting for workers...</div>
+  </div>
+
+  <!-- correlation matrix -->
+  <div class="section-title">correlation matrix</div>
+  <div class="panel" id="corr-panel">
+    <div class="loading-placeholder"><div class="spinner"></div> waiting for workers...</div>
+  </div>
+
+  <!-- pca -->
+  <div class="section-title">principal component analysis</div>
+  <div class="panel" id="pca-panel">
+    <div class="loading-placeholder"><div class="spinner"></div> waiting for workers...</div>
+  </div>
+
+  <!-- outliers -->
+  <div class="section-title">outlier detection</div>
+  <div class="panel" id="outlier-panel">
+    <div class="loading-placeholder"><div class="spinner"></div> waiting for workers...</div>
+  </div>
+
+  <!-- missing values -->
+  <div class="section-title">missing value profile</div>
+  <div class="panel" id="missing-panel">
+    <div class="loading-placeholder"><div class="spinner"></div> waiting for workers...</div>
+  </div>
+
+</div>
+
+<script>
+// ── state ─────────────────────────────────────────────────────
+let currentJobId = null;
+let pollInterval = null;
+const chartInstances = {};
+
+// ── upload ────────────────────────────────────────────────────
+const dropArea  = document.getElementById('drop-area');
+const fileInput = document.getElementById('file-input');
+
+dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('drag-over'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault();
+  dropArea.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  file && uploadFile(file);
+});
+
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  file && uploadFile(file);
+});
+
+async function uploadFile(file) {
+  if (!file.name.endsWith('.csv')) {
+    alert('csv files only, please.');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  showStatus('running', `uploading ${file.name}...`, 'sending to julia server');
+
+  try {
+    const res = await fetch('/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'upload failed');
+
+    currentJobId = data.job_id;
+    document.getElementById('upload-zone').style.display = 'none';
+    document.getElementById('dashboard').style.display   = 'block';
+
+    showStatus('running',
+      `analyzing ${file.name}`,
+      `${data.n_rows.toLocaleString()} rows × ${data.n_cols} cols — workers running`
+    );
+
+    startPolling();
+
+  } catch (e) {
+    showStatus('failed', 'upload failed', e.message);
+  }
+}
+
+// ── polling ───────────────────────────────────────────────────
+function startPolling() {
+  let progress = 5;
+  document.getElementById('progress-fill').style.width = progress + '%';
+
+  pollInterval = setInterval(async () => {
+    if (!currentJobId) return;
+
+    try {
+      const res  = await fetch(`/status/${currentJobId}`);
+      const data = await res.json();
+
+      if (data.status === 'running' || data.status === 'pending') {
+        progress = Math.min(progress + 8, 85);
+        document.getElementById('progress-fill').style.width = progress + '%';
+        return;
+      }
+
+      clearInterval(pollInterval);
+      document.getElementById('progress-fill').style.width = '100%';
+
+      if (data.status === 'complete') {
+        showStatus('complete', 'analysis complete', `${data.n_rows.toLocaleString()} rows processed across ${data.results?.meta?.n_workers || '?'} workers`);
+        renderDashboard(data.results);
+      } else {
+        showStatus('failed', 'analysis failed', data.error || 'unknown error');
+      }
+
+    } catch (e) {
+      // server hiccup — keep polling
+    }
+  }, 1500);
+}
+
+// ── status bar ────────────────────────────────────────────────
+function showStatus(type, title, sub) {
+  const bar  = document.getElementById('status-bar');
+  const dot  = document.getElementById('status-dot');
+  const ttl  = document.getElementById('status-title');
+  const stxt = document.getElementById('status-sub');
+
+  bar.style.display = 'block';
+  dot.className = `status-indicator status-${type}`;
+  ttl.textContent = title;
+  stxt.textContent = sub;
+}
+
+// ── render dashboard ──────────────────────────────────────────
+function renderDashboard(results) {
+  const meta = results.meta || {};
+  renderOverview(meta, results);
+  renderSummary(results.summaries || {});
+  renderHistograms(results.histograms || {});
+  renderCorrelations(results.correlations);
+  renderPCA(results.pca);
+  renderOutliers(results.outliers || {});
+  renderMissing(results.missing);
+}
+
+function fmt(v, d=2) {
+  if (v === undefined || v === null) return '—';
+  if (typeof v === 'number') return v.toLocaleString(undefined, { maximumFractionDigits: d });
+  return v;
+}
+
+// ── overview cards ────────────────────────────────────────────
+function renderOverview(meta, results) {
+  const missing = results.missing || {};
+  const totalMissing = missing.total_missing || 0;
+  const totalCells   = missing.total_cells || 1;
+  const missRate     = ((totalMissing / totalCells) * 100).toFixed(1);
+
+  const outlierCounts = Object.values(results.outliers || {})
+    .reduce((acc, o) => acc + (o.iqr_count || 0), 0);
+
+  const cards = [
+    { label: 'rows',         value: (meta.n_rows || 0).toLocaleString(),                sub: 'observations' },
+    { label: 'columns',      value: meta.n_cols || 0,                                   sub: 'total features' },
+    { label: 'numeric cols', value: (meta.numeric_cols || []).length,                   sub: 'analyzed' },
+    { label: 'missing rate', value: missRate + '%',                                     sub: `${totalMissing.toLocaleString()} cells` },
+    { label: 'outliers',     value: outlierCounts.toLocaleString(),                     sub: 'iqr method' },
+    { label: 'workers used', value: meta.n_workers || '?',                              sub: 'parallel cores' },
+  ];
+
+  const el = document.getElementById('overview-cards');
+  el.innerHTML = cards.map(c => `
+    <div class="stat-card">
+      <div class="stat-label">${c.label}</div>
+      <div class="stat-value">${c.value}</div>
+      <div class="stat-sub">${c.sub}</div>
+    </div>
+  `).join('');
+}
+
+// ── summary stats table ───────────────────────────────────────
+function renderSummary(summaries) {
+  const cols = Object.keys(summaries);
+  if (!cols.length) {
+    document.getElementById('summary-panel').innerHTML = '<div class="loading-placeholder">no numeric columns found</div>';
+    return;
+  }
+
+  const headers = ['column','n','mean','std','min','q1','median','q3','max','skew','kurt'];
+  const rows = cols.map(name => {
+    const s = summaries[name] || {};
+    return `<tr>
+      <td class="col-name">${name}</td>
+      <td>${fmt(s.n, 0)}</td>
+      <td>${fmt(s.mean)}</td>
+      <td>${fmt(s.std)}</td>
+      <td>${fmt(s.min)}</td>
+      <td>${fmt(s.q1)}</td>
+      <td>${fmt(s.median)}</td>
+      <td>${fmt(s.q3)}</td>
+      <td>${fmt(s.max)}</td>
+      <td>${fmt(s.skewness, 3)}</td>
+      <td>${fmt(s.kurtosis, 3)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('summary-panel').innerHTML = `
+    <div style="overflow-x:auto">
+      <table class="summary-table">
+        <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── histograms ────────────────────────────────────────────────
+function renderHistograms(histograms) {
+  const cols = Object.keys(histograms);
+  if (!cols.length) {
+    document.getElementById('hist-panel').innerHTML = '<div class="loading-placeholder">no numeric columns</div>';
+    return;
+  }
+
+  const cards = cols.map(name => {
+    const h = histograms[name];
+    const id = 'hist-' + name.replace(/\W/g,'_');
+    return `<div class="chart-card"><div class="chart-name">${name}</div><div class="chart-wrap"><canvas id="${id}"></canvas></div></div>`;
+  }).join('');
+
+  document.getElementById('hist-panel').innerHTML = `<div class="charts-grid">${cards}</div>`;
+
+  cols.forEach(name => {
+    const h   = histograms[name];
+    const id  = 'hist-' + name.replace(/\W/g,'_');
+    const ctx = document.getElementById(id);
+    if (!ctx || !h || h.error) return;
+
+    const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 180);
+    gradient.addColorStop(0,   'rgba(124,58,237,0.8)');
+    gradient.addColorStop(1,   'rgba(124,58,237,0.1)');
+
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: (h.bins || []).map(v => fmt(v, 2)),
+        datasets: [{ data: h.counts || [], backgroundColor: gradient, borderColor: 'rgba(124,58,237,0.9)', borderWidth: 1 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#64748b', font: { size: 9 }, maxTicksLimit: 6 }, grid: { color: '#1e2535' } },
+          y: { ticks: { color: '#64748b', font: { size: 9 } }, grid: { color: '#1e2535' } }
+        }
+      }
+    });
+  });
+}
+
+// ── correlation heatmap ───────────────────────────────────────
+function renderCorrelations(corr) {
+  const panel = document.getElementById('corr-panel');
+  if (!corr || corr.error) {
+    panel.innerHTML = `<div class="loading-placeholder">${corr?.error || 'need ≥2 numeric columns'}</div>`;
+    return;
+  }
+
+  const names  = corr.names  || [];
+  const matrix = corr.matrix || [];
+  const n = names.length;
+
+  function corrColor(v) {
+    const abs = Math.abs(v);
+    if (v > 0) return `rgba(124, 58, 237, ${0.15 + abs * 0.8})`;
+    return `rgba(239, 68, 68, ${0.15 + abs * 0.8})`;
+  }
+
+  const labelRow = `<div class="heat-labels-row">${names.map(n => `<div class="heat-label">${n.slice(0,5)}</div>`).join('')}</div>`;
+
+  const rows = matrix.map((row, i) => {
+    const cells = row.map((v, j) => {
+      const fv = typeof v === 'number' ? v.toFixed(2) : '—';
+      const bg = corrColor(v || 0);
+      const fg = Math.abs(v || 0) > 0.5 ? '#e2e8f0' : '#94a3b8';
+      return `<div class="heat-cell" style="background:${bg};color:${fg}" title="${names[i]} × ${names[j]}: ${fv}">${fv}</div>`;
+    }).join('');
+    return `<div class="heat-row"><div class="heat-row-label">${names[i].slice(0,7)}</div>${cells}</div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">pearson correlation</div>
+      <div class="panel-badge">purple = positive  ·  red = negative</div>
+    </div>
+    <div class="heatmap-wrap">${labelRow}${rows}</div>`;
+}
+
+// ── pca scatter ───────────────────────────────────────────────
+function renderPCA(pca) {
+  const panel = document.getElementById('pca-panel');
+  if (!pca || pca.error) {
+    panel.innerHTML = `<div class="loading-placeholder">${pca?.error || 'pca not available'}</div>`;
+    return;
+  }
+
+  const s1 = pca.scores_pc1 || [];
+  const s2 = pca.scores_pc2 || [];
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">pca biplot</div>
+      <div class="panel-badge">pc1: ${pca.var_explained_pc1}%  ·  pc2: ${pca.var_explained_pc2}%</div>
+    </div>
+    <div class="pca-wrap"><canvas id="pca-canvas"></canvas></div>`;
+
+  const ctx = document.getElementById('pca-canvas');
+  if (!ctx) return;
+
+  const points = s1.map((x, i) => ({ x, y: s2[i] || 0 }));
+
+  new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        data: points,
+        backgroundColor: 'rgba(124,58,237,0.5)',
+        borderColor: 'rgba(168,85,247,0.8)',
+        pointRadius: 3,
+        pointHoverRadius: 5,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: `pc1 (${pca.var_explained_pc1}%)`, color: '#64748b' },
+             ticks: { color: '#64748b' }, grid: { color: '#1e2535' } },
+        y: { title: { display: true, text: `pc2 (${pca.var_explained_pc2}%)`, color: '#64748b' },
+             ticks: { color: '#64748b' }, grid: { color: '#1e2535' } }
+      }
+    }
+  });
+}
+
+// ── outliers ──────────────────────────────────────────────────
+function renderOutliers(outliers) {
+  const panel = document.getElementById('outlier-panel');
+  const cols  = Object.keys(outliers);
+  if (!cols.length) {
+    panel.innerHTML = '<div class="loading-placeholder">no numeric columns</div>';
+    return;
+  }
+
+  const flagged = cols.filter(c => (outliers[c].iqr_count || 0) > 0);
+  const clean   = cols.filter(c => (outliers[c].iqr_count || 0) === 0);
+
+  const cards = cols.map(name => {
+    const o   = outliers[name] || {};
+    const pct = o.pct_flagged || 0;
+    const flagClass = pct > 10 ? 'outlier-flag' : '';
+    return `<div class="outlier-card">
+      <div class="outlier-col-name">${name}</div>
+      <div class="outlier-row"><span>iqr outliers</span><span class="${flagClass}">${fmt(o.iqr_count, 0)}</span></div>
+      <div class="outlier-row"><span>z-score (|z|>3)</span><span>${fmt(o.zscore_count, 0)}</span></div>
+      <div class="outlier-row"><span>% flagged</span><span class="${flagClass}">${fmt(o.pct_flagged)}%</span></div>
+      <div class="outlier-row"><span>iqr lower</span><span>${fmt(o.iqr_lower)}</span></div>
+      <div class="outlier-row"><span>iqr upper</span><span>${fmt(o.iqr_upper)}</span></div>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">outlier report</div>
+      <div class="panel-badge">${flagged.length} cols with outliers · ${clean.length} clean</div>
+    </div>
+    <div class="outlier-cols">${cards}</div>`;
+}
+
+// ── missing values ────────────────────────────────────────────
+function renderMissing(missing) {
+  const panel = document.getElementById('missing-panel');
+  if (!missing || missing.error) {
+    panel.innerHTML = '<div class="loading-placeholder">missing profile not available</div>';
+    return;
+  }
+
+  const cols = Object.entries(missing.columns || {})
+    .sort((a, b) => b[1].pct_missing - a[1].pct_missing);
+
+  if (!cols.length) {
+    panel.innerHTML = '<div class="loading-placeholder">no columns found</div>';
+    return;
+  }
+
+  const totalMissRate = ((missing.total_missing / Math.max(missing.total_cells, 1)) * 100).toFixed(1);
+
+  const bars = cols.map(([name, info]) => `
+    <div class="missing-row">
+      <div class="missing-col-name">${name}</div>
+      <div class="missing-bar-bg">
+        <div class="missing-bar-fill" style="width:${Math.max(info.pct_missing, info.pct_missing > 0 ? 0.5 : 0)}%"></div>
+      </div>
+      <div class="missing-pct">${info.pct_missing}%</div>
+    </div>`).join('');
+
+  panel.innerHTML = `
+    <div class="panel-header">
+      <div class="panel-title">missing value profile</div>
+      <div class="panel-badge">${missing.total_missing?.toLocaleString()} missing cells · ${totalMissRate}% overall</div>
+    </div>
+    <div class="missing-rows">${bars}</div>`;
+}
+
+// ── worker count ──────────────────────────────────────────────
+// just poll /jobs once to see if server is alive
+(async () => {
+  try {
+    const res  = await fetch('/jobs');
+    if (res.ok) {
+      document.getElementById('worker-count').textContent = 'server online';
+    }
+  } catch {
+    document.getElementById('worker-count').textContent = 'server offline';
+    document.querySelector('.dot').style.background = '#ef4444';
+  }
+})();
+</script>
+</body>
+</html>
